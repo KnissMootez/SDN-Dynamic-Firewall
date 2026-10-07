@@ -1,4 +1,4 @@
-# SDN Network Access Control (Ryu + Mininet)
+# SDN Dynamic Firewall: Network Access Control with Ryu + Mininet
 
 A zero-trust **Network Access Control (NAC)** system built on Software-Defined Networking. Every new device that joins the network is **quarantined by default** until an admin approves it. Known IoT devices are auto-approved through DHCP, and the controller watches approved hosts for **port scans, floods and ARP spoofing**, quarantining or blocking them automatically. A live web dashboard shows the topology, host states, risk scores, attacks and the actual OpenFlow tables.
 
