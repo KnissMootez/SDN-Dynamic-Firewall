@@ -72,6 +72,9 @@ blocked ◀──────────3 violations (auto-block)── attack 
 | 10 | L2 learned flows (idle 30 s, hard 60 s) | normal forwarding; approved hosts also send a copy to the controller for inspection |
 | 0 | table-miss → controller | |
 
+![Live OpenFlow table of switch s7](docs/flow-table-s7.png)
+*Live flow table of s7 from the dashboard. Priority 5000: DHCP (`eth_type=2048`, UDP 68↔67) and ARP (`eth_type=2054`) flooded (`port=4294967291` = `OFPP_FLOOD`). Priority 10: learned L2 flows that forward to the destination port **and** send the first 128 bytes to the controller (`port=4294967293` = `OFPP_CONTROLLER`) for inspection. Priority 0: table-miss.*
+
 **Attack detection** (on approved hosts)
 
 | Attack | Rule |
