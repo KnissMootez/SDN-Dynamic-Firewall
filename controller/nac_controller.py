@@ -67,7 +67,7 @@ class NACController(app_manager.RyuApp):
         self.ip_to_mac = {}
         self.attack_cooldown = {}  # Track last attack time per MAC to prevent spam
         
-        # Heuristic risk scoring - collect metrics per MAC
+        # AI Risk Scoring - collect metrics per MAC
         self.ai_metrics = defaultdict(lambda: {
             'pkt_count': 0,
             'unique_dst_ips': set(),
@@ -80,7 +80,7 @@ class NACController(app_manager.RyuApp):
         })
         self.risk_scores = {}  # Current risk score per MAC
         
-        # Risk thresholds
+        # AI thresholds
         self.AI_RISK_THRESHOLD = 70  # Auto-quarantine if risk > 70%
         
         # Dashboard data
@@ -101,13 +101,13 @@ class NACController(app_manager.RyuApp):
         self.dashboard_export = hub.spawn(self._export_dashboard_data)
         
         self.logger.info("=" * 70)
-        self.logger.info("DYNAMIC NAC CONTROLLER - WITH HEURISTIC RISK SCORING")
+        self.logger.info("DYNAMIC NAC CONTROLLER - WITH AI RISK SCORING")
         self.logger.info("=" * 70)
         self.logger.info("✅ Proper MAC learning enabled")
         self.logger.info("✅ DHCP always allowed (priority 5000)")
         self.logger.info("✅ Dynamic host support working")
         self.logger.info("✅ Attack detection: Port scan, DDoS, ARP spoof")
-        self.logger.info("✅ Heuristic Risk Scoring: Auto-quarantine at >70%% risk")
+        self.logger.info("✅ AI Risk Scoring: Auto-quarantine at >70%% risk")
         self.logger.info("=" * 70)
     
     def load_state(self):
@@ -551,8 +551,8 @@ class NACController(app_manager.RyuApp):
         return min(100, risk)
     
     def _ai_risk_scoring_loop(self):
-        """Risk scoring loop - runs every 10 seconds to calculate heuristic risk scores"""
-        self.logger.info("📈 Heuristic Risk Scoring started (10s interval)")
+        """AI loop - runs every 10 seconds to calculate risk scores"""
+        self.logger.info("🤖 AI Risk Scoring started (10s interval)")
         
         while self.running:
             hub.sleep(10)
@@ -577,7 +577,7 @@ class NACController(app_manager.RyuApp):
                     ip = self.host_states[mac].get('ip', 'unknown')
                     
                     if state == 'approved':
-                        self.logger.info("📈 Risk: %s (%s) = %.1f%% [pkt/s:%.1f, IPs:%d, ports:%d]",
+                        self.logger.info("🤖 AI Risk: %s (%s) = %.1f%% [pkt/s:%.1f, IPs:%d, ports:%d]",
                                        mac, ip, risk_score,
                                        metrics['pkt_count'] / max(current_time - metrics['last_reset'], 1),
                                        len(metrics['unique_dst_ips']),
@@ -586,7 +586,7 @@ class NACController(app_manager.RyuApp):
                     # Auto-quarantine if risk too high and host is approved
                     if risk_score > self.AI_RISK_THRESHOLD and state == 'approved':
                         self.logger.warning("=" * 70)
-                        self.logger.warning("📈 RISK AUTO-QUARANTINE")
+                        self.logger.warning("🤖 AI AUTO-QUARANTINE")
                         self.logger.warning("=" * 70)
                         self.logger.warning("  MAC:        %s", mac)
                         self.logger.warning("  IP:         %s", ip)
@@ -744,7 +744,7 @@ class NACController(app_manager.RyuApp):
                 with open('/tmp/topology.json', 'w') as f:
                     json.dump(topology, f, indent=2)
                 
-                # Export risk metrics
+                # Export AI metrics
                 ai_data = {}
                 for mac in self.risk_scores.keys():
                     if mac in self.host_states:
@@ -837,7 +837,7 @@ class NACController(app_manager.RyuApp):
             self.mac_seen.add(src)
             self.logger.info("Learned new MAC: %s on s%d port %d", src, dpid, in_port)
         
-        # Risk: Collect metrics for risk scoring
+        # AI: Collect metrics for risk scoring
         if src in self.host_states or src not in PRE_APPROVED_IPS:
             # Track packet
             self.ai_metrics[src]['pkt_count'] += 1
@@ -852,7 +852,7 @@ class NACController(app_manager.RyuApp):
         
         # Attack detection - ARP spoofing
         if arp_pkt and arp_pkt.src_ip != '0.0.0.0':
-            # Risk: Track ARP packets
+            # AI: Track ARP packets
             if src in self.ai_metrics:
                 self.ai_metrics[src]['arp_count'] += 1
             
@@ -866,11 +866,11 @@ class NACController(app_manager.RyuApp):
             src_ip = ip_pkt.src
             dst_ip = ip_pkt.dst
             
-            # Risk: Track destination IPs
+            # AI: Track destination IPs
             if src in self.ai_metrics and dst_ip != '0.0.0.0':
                 self.ai_metrics[src]['unique_dst_ips'].add(dst_ip)
             
-            # Risk: Track ICMP
+            # AI: Track ICMP
             icmp_pkt = pkt.get_protocol(icmp.icmp)
             if icmp_pkt and src in self.ai_metrics:
                 self.ai_metrics[src]['icmp_count'] += 1
@@ -921,7 +921,7 @@ class NACController(app_manager.RyuApp):
                             # Check if this is a server response (not client request)
                             is_server_response = src_port < 1024
                             
-                            # Risk: Only track destination ports for CLIENT requests (not server responses)
+                            # AI: Only track destination ports for CLIENT requests (not server responses)
                             if src in self.ai_metrics and not is_server_response:
                                 self.ai_metrics[src]['unique_dst_ports'].add(dst_port)
                             
@@ -935,7 +935,7 @@ class NACController(app_manager.RyuApp):
                                 is_server_response = tcp_pkt.src_port < 1024
                                 
                                 if not is_syn_ack and not is_server_response:
-                                    # Risk: Track SYN packets (client initiating connections)
+                                    # AI: Track SYN packets (client initiating connections)
                                     if src in self.ai_metrics:
                                         self.ai_metrics[src]['syn_count'] += 1
                                     
@@ -958,7 +958,7 @@ class NACController(app_manager.RyuApp):
                                 self.handle_attack(src, "DDoS/Flooding", 
                                                  f"{packet_count} packets in 5 seconds from {src_ip}")
                         
-                        # Risk: Also track UDP ports
+                        # AI: Also track UDP ports
                         udp_pkt = pkt.get_protocol(udp.udp)
                         if udp_pkt and src in self.ai_metrics:
                             self.ai_metrics[src]['unique_dst_ports'].add(udp_pkt.dst_port)

@@ -149,7 +149,7 @@
             <div class="d-flex justify-content-between align-items-center">
                 <div>
                     <h1>🛡️ Network Access Control Dashboard</h1>
-                    <p class="mb-0">Real-time NAC monitoring with heuristic threat detection</p>
+                    <p class="mb-0">Real-time NAC monitoring with AI-powered threat detection</p>
                 </div>
                 <div>
                     <span id="connectionStatus" class="badge bg-success">🟢 Connected</span>
@@ -227,7 +227,7 @@
                 </div>
             </div>
             
-            <!-- Right Column: Hosts Table + Risk + Attacks -->
+            <!-- Right Column: Hosts Table + AI Risk + Attacks -->
             <div class="col-md-6">
                 <!-- Hosts Table -->
                 <div class="card">
@@ -253,10 +253,10 @@
                     </div>
                 </div>
                 
-                <!-- Risk Chart -->
+                <!-- AI Risk Chart -->
                 <div class="card">
                     <div class="card-header">
-                        <h5 class="mb-0">📈 Risk Scores (heuristic)</h5>
+                        <h5 class="mb-0">🤖 AI Risk Scores</h5>
                     </div>
                     <div class="card-body">
                         <canvas id="riskChart" height="100"></canvas>
@@ -987,7 +987,7 @@ if __name__ == '__main__':
             });
         }
         
-        // Update risk chart
+        // Update AI risk chart
         function updateAI(aiMetrics) {
             if (!aiMetrics || !riskChart) return;
             
