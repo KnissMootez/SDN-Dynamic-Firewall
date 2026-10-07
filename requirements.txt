@@ -1,0 +1,6 @@
+# Python 3.8 (Ryu 4.34 does not support newer versions)
+ryu==4.34
+eventlet==0.30.2
+flask==3.0.3
+flask-socketio==5.5.1
+flask-cors

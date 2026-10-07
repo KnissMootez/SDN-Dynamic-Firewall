@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NAC Dashboard - Network Access Control</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Vis.js for network topology -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/dist/vis-network.min.js"></script>
+    
+    <!-- Chart.js for graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
+    <style>
+        body {
+            background: #1a1a2e;
+            color: #eee;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 10px;
+        }
+        
+        .card {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            margin-bottom: 20px;
+            color: #eee;
+        }
+        
+        .card-header {
+            background: #0f3460;
+            border-bottom: 1px solid #533483;
+            color: #fff;
+        }
+        
+        .card-body {
+            color: #eee;
+        }
+        
+        .form-control, .form-select {
+            background: #1a1a2e;
+            border: 1px solid #533483;
+            color: #eee;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            background: #16213e;
+            border-color: #667eea;
+            color: #fff;
+        }
+        
+        .table {
+            color: #eee;
+        }
+        
+        .table th {
+            color: #fff;
+            background: #0f3460;
+        }
+        
+        #network {
+            height: 400px;
+            border: 2px solid #533483;
+            border-radius: 5px;
+            background: #0a1929;
+        }
+        
+        .btn-approve {
+            background: #28a745;
+            border: none;
+        }
+        
+        .btn-block {
+            background: #dc3545;
+            border: none;
+        }
+        
+        .btn-attack {
+            background: #ff6b6b;
+            border: none;
+        }
+        
+        .status-approved {
+            color: #28a745;
+        }
+        
+        .status-quarantine {
+            color: #ffc107;
+        }
+        
+        .status-blocked {
+            color: #dc3545;
+        }
+        
+        .risk-low {
+            color: #28a745;
+        }
+        
+        .risk-medium {
+            color: #ffc107;
+        }
+        
+        .risk-high {
+            color: #dc3545;
+        }
+        
+        #attackLog {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .attack-item {
+            background: #2a2a3e;
+            padding: 10px;
+            margin-bottom: 5px;
+            border-left: 3px solid #ff6b6b;
+            border-radius: 3px;
+        }
+        
+        .stats-box {
+            text-align: center;
+            padding: 15px;
+            background: #0f3460;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        
+        .stats-number {
+            font-size: 2em;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="header">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1>🛡️ Network Access Control Dashboard</h1>
+                    <p class="mb-0">Real-time NAC monitoring with heuristic threat detection</p>
+                </div>
+                <div>
+                    <span id="connectionStatus" class="badge bg-success">🟢 Connected</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Stats Row -->
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <div class="stats-box">
+                    <div class="stats-number" id="totalHosts">0</div>
+                    <div>Total Hosts</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-box">
+                    <div class="stats-number status-approved" id="approvedHosts">0</div>
+                    <div>Approved</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-box">
+                    <div class="stats-number status-quarantine" id="quarantineHosts">0</div>
+                    <div>Quarantined</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-box">
+                    <div class="stats-number status-blocked" id="blockedHosts">0</div>
+                    <div>Blocked</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Content Row -->
+        <div class="row">
+            <!-- Left Column: Topology + Controls -->
+            <div class="col-md-6">
+                <!-- Network Topology -->
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">🌐 Network Topology</h5>
+                        <div>
+                            <button class="btn btn-sm btn-info" onclick="toggleDesignMode()" id="designModeBtn">
+                                ✏️ Design Mode
+                            </button>
+                            <button class="btn btn-sm btn-success" onclick="saveTopology()" id="saveTopologyBtn" style="display:none;">
+                                💾 Save Topology
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="network"></div>
+                        <div id="designTools" style="display:none; margin-top:10px;">
+                            <button class="btn btn-sm btn-primary" onclick="addSwitch()">➕ Add Switch</button>
+                            <button class="btn btn-sm btn-primary" onclick="addHost()">➕ Add Host</button>
+                            <button class="btn btn-sm btn-warning" onclick="deleteSelected()">🗑️ Delete Selected</button>
+                            <button class="btn btn-sm btn-secondary" onclick="clearTopology()">🔄 Clear All</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Legend -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">📖 Legend</h5>
+                    </div>
+                    <div class="card-body">
+                        <p><span class="status-approved">✅ Green</span> = Approved</p>
+                        <p><span class="status-quarantine">🟡 Yellow</span> = Quarantined</p>
+                        <p><span class="status-blocked">🔴 Red</span> = Blocked</p>
+                        <p><strong>Click switches</strong> to view OpenFlow tables</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Column: Hosts Table + Risk + Attacks -->
+            <div class="col-md-6">
+                <!-- Hosts Table -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">👥 Hosts</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                            <table class="table table-dark table-sm table-hover">
+                                <thead class="sticky-top" style="background: #0f3460;">
+                                    <tr>
+                                        <th>Hostname</th>
+                                        <th>IP</th>
+                                        <th>MAC</th>
+                                        <th>State</th>
+                                        <th>Violations</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="hostsTable">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Risk Chart -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">📈 Risk Scores (heuristic)</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="riskChart" height="100"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Attack Log -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">⚠️ Recent Attacks</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="attackLog"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Flow Table Modal -->
+    <div class="modal fade" id="flowModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content" style="background:#16213e; color:#eee;">
+                <div class="modal-header" style="border-bottom:1px solid #533483;">
+                    <h5 class="modal-title" id="flowModalTitle">OpenFlow Table</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Priority</th>
+                                    <th>Match</th>
+                                    <th>Actions</th>
+                                    <th>Timeouts</th>
+                                    <th>Stats</th>
+                                </tr>
+                            </thead>
+                            <tbody id="flowTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // WebSocket connection - auto-detect port
+        const socket = io(window.location.origin);
+        
+        // Network visualization
+        let network = null;
+        let riskChart = null;
+        let currentFlows = {};  // Store flow data
+        
+        // Design mode
+        let designMode = false;
+        let customTopology = {
+            nodes: [],
+            edges: []
+        };
+        let nodeIdCounter = 1;
+        
+        // Initialize
+        function init() {
+            initNetwork();
+            initRiskChart();
+        }
+        
+        // Initialize network topology
+        function initNetwork() {
+            const container = document.getElementById('network');
+            const data = {
+                nodes: [],
+                edges: []
+            };
+            
+            const options = {
+                nodes: {
+                    shape: 'image',
+                    size: 30,
+                    font: {
+                        size: 12,
+                        color: '#ffffff',
+                        background: 'rgba(0,0,0,0.7)',
+                        strokeWidth: 0
+                    },
+                    borderWidth: 3,
+                    shadow: {
+                        enabled: true,
+                        color: 'rgba(102, 126, 234, 0.5)',
+                        size: 10,
+                        x: 0,
+                        y: 0
+                    }
+                },
+                edges: {
+                    width: 3,
+                    color: {
+                        color: '#667eea',
+                        highlight: '#764ba2',
+                        hover: '#764ba2'
+                    },
+                    smooth: {
+                        type: 'continuous',
+                        roundness: 0.5
+                    },
+                    shadow: {
+                        enabled: true,
+                        color: 'rgba(102, 126, 234, 0.3)',
+                        size: 5
+                    }
+                },
+                physics: {
+                    enabled: false  // Disable physics to prevent nodes jumping around
+                },
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 100,
+                    zoomView: true,
+                    dragView: true,
+                    dragNodes: true  // Allow manual dragging
+                }
+            };
+            
+            network = new vis.Network(container, data, options);
+            
+            // Add hover effect
+            network.on('hoverNode', function(params) {
+                container.style.cursor = 'pointer';
+            });
+            network.on('blurNode', function(params) {
+                container.style.cursor = 'default';
+            });
+            
+            // Add click handler for switches to show flows
+            network.on('click', function(params) {
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    if (nodeId.startsWith('s') && !nodeId.includes(':')) {
+                        // Clicked on a switch
+                        showFlowTable(nodeId);
+                    }
+                }
+            });
+        }
+        
+        // Initialize risk chart
+        function initRiskChart() {
+            const ctx = document.getElementById('riskChart').getContext('2d');
+            riskChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['No data yet'],
+                    datasets: [{
+                        label: 'Risk Score (%)',
+                        data: [0],
+                        backgroundColor: function(context) {
+                            const value = context.parsed?.y || 0;
+                            return value > 70 ? '#dc3545' : value > 40 ? '#ffc107' : '#28a745';
+                        },
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {color: '#eee'},
+                            grid: {color: '#333'}
+                        },
+                        x: {
+                            ticks: {color: '#eee'},
+                            grid: {color: '#333'}
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: {color: '#eee'}
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Update dashboard
+        socket.on('update', function(data) {
+            console.log('📥 Received update:', data.topology.hosts.length, 'hosts');
+            
+            if (!designMode) {  // Only update if not in design mode
+                updateTopology(data.topology);
+                updateStats(data.topology);  // Update stats from topology
+            }
+            updateHosts(data.hosts);
+            updateAI(data.ai_metrics);
+            updateAttacks(data.attacks);
+            updateFlows(data.flows);
+        });
+        
+        // Update flows
+        function updateFlows(flows) {
+            if (!flows) return;
+            currentFlows = flows;
+        }
+        
+        // Show flow table for a switch
+        function showFlowTable(switchId) {
+            const flows = currentFlows[switchId] || [];
+            
+            document.getElementById('flowModalTitle').textContent = `OpenFlow Table - ${switchId}`;
+            
+            const tbody = document.getElementById('flowTableBody');
+            tbody.innerHTML = '';
+            
+            if (flows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center">No flows installed</td></tr>';
+            } else {
+                flows.forEach(flow => {
+                    const matchStr = Object.entries(flow.match || {})
+                        .map(([k, v]) => `${k}=${v}`)
+                        .join(', ') || 'ANY';
+                    
+                    const actionsStr = flow.actions.join(', ') || 'DROP';
+                    
+                    const timeouts = flow.idle_timeout > 0 || flow.hard_timeout > 0
+                        ? `idle:${flow.idle_timeout}s, hard:${flow.hard_timeout}s`
+                        : 'permanent';
+                    
+                    const stats = `pkts:${flow.packet_count}, bytes:${flow.byte_count}`;
+                    
+                    const priorityClass = flow.priority >= 5000 ? 'text-warning' : 
+                                         flow.priority >= 1000 ? 'text-info' : '';
+                    
+                    const row = `
+                        <tr>
+                            <td class="${priorityClass}">${flow.priority}</td>
+                            <td><small>${matchStr}</small></td>
+                            <td><small>${actionsStr}</small></td>
+                            <td><small>${timeouts}</small></td>
+                            <td><small>${stats}</small></td>
+                        </tr>
+                    `;
+                    tbody.innerHTML += row;
+                });
+            }
+            
+            // Show modal
+            new bootstrap.Modal(document.getElementById('flowModal')).show();
+        }
+        
+        // Connection status
+        socket.on('connect', function() {
+            console.log('✅ WebSocket connected');
+            document.getElementById('connectionStatus').innerHTML = '🟢 Connected';
+            document.getElementById('connectionStatus').className = 'badge bg-success';
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('❌ WebSocket disconnected');
+            document.getElementById('connectionStatus').innerHTML = '🔴 Disconnected';
+            document.getElementById('connectionStatus').className = 'badge bg-danger';
+        });
+        
+        socket.on('connect_error', function(error) {
+            console.log('❌ Connection error:', error);
+            document.getElementById('connectionStatus').innerHTML = '🟡 Reconnecting...';
+            document.getElementById('connectionStatus').className = 'badge bg-warning';
+        });
+        
+        // ========================================================================
+        // TOPOLOGY DESIGNER MODE
+        // ========================================================================
+        
+        function toggleDesignMode() {
+            designMode = !designMode;
+            
+            if (designMode) {
+                // Enter design mode
+                document.getElementById('designModeBtn').textContent = '👁️ View Mode';
+                document.getElementById('designModeBtn').className = 'btn btn-sm btn-warning';
+                document.getElementById('saveTopologyBtn').style.display = 'inline-block';
+                document.getElementById('designTools').style.display = 'block';
+                
+                // Enable editing
+                network.setOptions({
+                    manipulation: {
+                        enabled: true,
+                        addNode: false,
+                        addEdge: function(edgeData, callback) {
+                            // Only allow connecting nodes
+                            if (edgeData.from && edgeData.to) {
+                                callback(edgeData);
+                            }
+                        }
+                    },
+                    physics: {enabled: false}  // Disable physics for manual placement
+                });
+                
+                alert('Design Mode: Click "Add Switch/Host" to add nodes. Click and drag to connect them!');
+            } else {
+                // Exit design mode
+                document.getElementById('designModeBtn').textContent = '✏️ Design Mode';
+                document.getElementById('designModeBtn').className = 'btn btn-sm btn-info';
+                document.getElementById('saveTopologyBtn').style.display = 'none';
+                document.getElementById('designTools').style.display = 'none';
+                
+                network.setOptions({
+                    manipulation: {enabled: false},
+                    physics: {enabled: true}
+                });
+            }
+        }
+        
+        function addSwitch() {
+            const switchId = `s${nodeIdCounter}`;
+            const zone = prompt('Enter zone (CORE/LAN/DMZ/IOT/GUEST):', 'GUEST');
+            
+            customTopology.nodes.push({
+                id: switchId,
+                label: switchId + '\n' + zone,
+                color: {background: '#4CAF50', border: '#388E3C'},
+                shape: 'box',
+                size: 25,
+                x: Math.random() * 400,
+                y: Math.random() * 300
+            });
+            
+            nodeIdCounter++;
+            redrawCustomTopology();
+        }
+        
+        function addHost() {
+            const hostname = prompt('Enter hostname:', `host${nodeIdCounter}`);
+            if (!hostname) return;
+            
+            customTopology.nodes.push({
+                id: hostname,
+                label: hostname,
+                color: {background: '#ffc107', border: '#e0a800'},
+                shape: 'dot',
+                size: 20,
+                x: Math.random() * 400,
+                y: Math.random() * 300
+            });
+            
+            nodeIdCounter++;
+            redrawCustomTopology();
+        }
+        
+        function deleteSelected() {
+            const selected = network.getSelectedNodes();
+            if (selected.length === 0) {
+                alert('Select a node first');
+                return;
+            }
+            
+            selected.forEach(nodeId => {
+                // Remove node
+                customTopology.nodes = customTopology.nodes.filter(n => n.id !== nodeId);
+                // Remove edges connected to this node
+                customTopology.edges = customTopology.edges.filter(e => e.from !== nodeId && e.to !== nodeId);
+            });
+            
+            redrawCustomTopology();
+        }
+        
+        function clearTopology() {
+            if (!confirm('Clear entire topology?')) return;
+            
+            customTopology = {nodes: [], edges: []};
+            nodeIdCounter = 1;
+            redrawCustomTopology();
+        }
+        
+        function redrawCustomTopology() {
+            const data = {
+                nodes: customTopology.nodes,
+                edges: customTopology.edges
+            };
+            network.setData(data);
+        }
+        
+        function saveTopology() {
+            // Get current positions
+            const positions = network.getPositions();
+            customTopology.nodes.forEach(node => {
+                if (positions[node.id]) {
+                    node.x = positions[node.id].x;
+                    node.y = positions[node.id].y;
+                }
+            });
+            
+            // Get edges from network (in case user drew connections)
+            const edges = network.body.data.edges.get();
+            customTopology.edges = edges;
+            
+            // Generate Python topology code
+            const pythonCode = generateTopologyCode(customTopology);
+            
+            // Show code to user
+            const modal = `
+                <div style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); 
+                            background:#1a1a2e; padding:20px; border:2px solid #667eea; 
+                            border-radius:10px; z-index:9999; max-width:80%; max-height:80%; overflow:auto;">
+                    <h4>Generated Topology Code</h4>
+                    <p>Copy this code and save as <code>custom_topology.py</code></p>
+                    <textarea style="width:100%; height:400px; font-family:monospace; background:#0a1929; color:#0f0; border:1px solid #333; padding:10px;">${pythonCode}</textarea>
+                    <br><br>
+                    <button onclick="this.parentElement.remove()" class="btn btn-primary">Close</button>
+                    <button onclick="copyToClipboard(this.previousElementSibling.previousElementSibling.previousElementSibling.value)" class="btn btn-success">Copy Code</button>
+                </div>
+                <div onclick="this.nextElementSibling.remove(); this.remove();" style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:9998;"></div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modal);
+        }
+        
+        function generateTopologyCode(topo) {
+            let code = `#!/usr/bin/env python3
+"""
+Custom SDN Topology - Generated from Dashboard
+"""
+
+from mininet.topo import Topo
+from mininet.net import Mininet
+from mininet.node import RemoteController
+from mininet.cli import CLI
+from mininet.log import setLogLevel
+
+class CustomTopology(Topo):
+    def build(self):
+        # Add switches
+`;
+            
+            // Add switches
+            const switches = topo.nodes.filter(n => n.id.startsWith('s'));
+            switches.forEach(sw => {
+                code += `        ${sw.id} = self.addSwitch('${sw.id}')\n`;
+            });
+            
+            code += `\n        # Add hosts\n`;
+            
+            // Add hosts
+            const hosts = topo.nodes.filter(n => !n.id.startsWith('s'));
+            hosts.forEach(host => {
+                code += `        ${host.id} = self.addHost('${host.id}', ip='0.0.0.0/24')\n`;
+            });
+            
+            code += `\n        # Add links\n`;
+            
+            // Add links
+            topo.edges.forEach(edge => {
+                code += `        self.addLink(${edge.from}, ${edge.to})\n`;
+            });
+            
+            code += `
+
+def start_network():
+    topo = CustomTopology()
+    net = Mininet(topo=topo, controller=RemoteController)
+    net.start()
+    CLI(net)
+    net.stop()
+
+if __name__ == '__main__':
+    setLogLevel('info')
+    start_network()
+`;
+            
+            return code;
+        }
+        
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Code copied to clipboard!');
+            });
+        }
+        
+        // ========================================================================
+        // END TOPOLOGY DESIGNER MODE
+        // ========================================================================
+        
+        // Update topology visualization
+        function updateTopology(topology) {
+            if (!network || !topology) return;
+            
+            const nodes = [];
+            const edges = [];
+            
+            // Get current positions to preserve them
+            const currentPositions = network.getPositions();
+            
+            // Switch icon (using Unicode/emoji or data URL)
+            const switchIcon = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+                    <rect x="10" y="30" width="80" height="40" rx="5" fill="%234CAF50" stroke="%23388E3C" stroke-width="3"/>
+                    <circle cx="25" cy="50" r="4" fill="%23FFF"/>
+                    <circle cx="40" cy="50" r="4" fill="%23FFF"/>
+                    <circle cx="55" cy="50" r="4" fill="%23FFF"/>
+                    <circle cx="70" cy="50" r="4" fill="%23FFF"/>
+                    <rect x="15" y="35" width="70" height="8" rx="2" fill="%23333"/>
+                    <text x="50" y="25" text-anchor="middle" fill="%23FFF" font-size="14" font-weight="bold">SW</text>
+                </svg>
+            `);
+            
+            // Computer/laptop icon
+            const hostIcon = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+                    <rect x="15" y="25" width="70" height="45" rx="3" fill="%23607D8B" stroke="%23455A64" stroke-width="2"/>
+                    <rect x="20" y="30" width="60" height="35" fill="%2390CAF9"/>
+                    <rect x="30" y="72" width="40" height="3" rx="1" fill="%23607D8B"/>
+                    <rect x="25" y="75" width="50" height="5" rx="1" fill="%23455A64"/>
+                    <circle cx="50" cy="77" r="1.5" fill="%23333"/>
+                </svg>
+            `);
+            
+            // Router icon (for core/backbone)
+            const routerIcon = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+                    <rect x="20" y="40" width="60" height="30" rx="3" fill="%232196F3" stroke="%231976D2" stroke-width="2"/>
+                    <line x1="30" y1="25" x2="30" y2="40" stroke="%23FFF" stroke-width="2"/>
+                    <circle cx="30" cy="22" r="3" fill="%23FFF"/>
+                    <line x1="50" y1="25" x2="50" y2="40" stroke="%23FFF" stroke-width="2"/>
+                    <circle cx="50" cy="22" r="3" fill="%23FFF"/>
+                    <line x1="70" y1="25" x2="70" y2="40" stroke="%23FFF" stroke-width="2"/>
+                    <circle cx="70" cy="22" r="3" fill="%23FFF"/>
+                    <circle cx="30" cy="55" r="3" fill="%23FFD700"/>
+                    <circle cx="50" cy="55" r="3" fill="%2300FF00"/>
+                    <circle cx="70" cy="55" r="3" fill="%2300FF00"/>
+                </svg>
+            `);
+            
+            // Add switches with different icons based on zone
+            topology.switches.forEach(sw => {
+                let icon = switchIcon;
+                let color = '%234CAF50';
+                
+                // Use router icon for CORE/BACKBONE
+                if (sw.zone === 'CORE' || sw.zone === 'BACKBONE') {
+                    icon = routerIcon;
+                    color = '%232196F3';
+                }
+                
+                const nodeData = {
+                    id: sw.id,
+                    label: sw.id + '\n' + sw.zone,
+                    image: icon,
+                    shape: 'image',
+                    size: 40,
+                    font: {
+                        size: 13,
+                        color: '#fff',
+                        background: 'rgba(0,0,0,0.8)',
+                        strokeWidth: 0
+                    }
+                };
+                
+                // Preserve position if node already exists
+                if (currentPositions[sw.id]) {
+                    nodeData.x = currentPositions[sw.id].x;
+                    nodeData.y = currentPositions[sw.id].y;
+                    // Don't fix position - allow dragging
+                }
+                
+                nodes.push(nodeData);
+            });
+            
+            // Add hosts with computer icons and colors based on state
+            topology.hosts.forEach(host => {
+                let color;
+                let borderColor;
+                
+                if (host.state === 'approved') {
+                    color = '%2328a745';
+                    borderColor = '#28a745';
+                } else if (host.state === 'blocked') {
+                    color = '%23dc3545';
+                    borderColor = '#dc3545';
+                } else {
+                    color = '%23ffc107';
+                    borderColor = '#ffc107';
+                }
+                
+                // Create colored host icon
+                const coloredHostIcon = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+                        <rect x="15" y="25" width="70" height="45" rx="3" fill="${color}" stroke="${borderColor}" stroke-width="3"/>
+                        <rect x="20" y="30" width="60" height="35" fill="%23E3F2FD"/>
+                        <rect x="30" y="72" width="40" height="3" rx="1" fill="${color}"/>
+                        <rect x="25" y="75" width="50" height="5" rx="1" fill="${borderColor}"/>
+                        <circle cx="50" cy="77" r="1.5" fill="%23333"/>
+                        ${host.risk > 70 ? '<text x="50" y="20" text-anchor="middle" font-size="20">⚠️</text>' : ''}
+                    </svg>
+                `);
+                
+                // Add risk warning to label if high
+                let label = host.label;
+                if (host.risk > 70) label = '⚠️ ' + label + '\nHIGH RISK';
+                
+                const nodeData = {
+                    id: host.id,
+                    label: label,
+                    image: coloredHostIcon,
+                    shape: 'image',
+                    size: 35,
+                    borderWidth: 3,
+                    color: {
+                        border: borderColor,
+                        highlight: { border: '#fff' }
+                    },
+                    font: {
+                        size: 11,
+                        color: '#fff',
+                        background: 'rgba(0,0,0,0.8)'
+                    }
+                };
+                
+                // Preserve position if node exists
+                if (currentPositions[host.id]) {
+                    nodeData.x = currentPositions[host.id].x;
+                    nodeData.y = currentPositions[host.id].y;
+                    // Don't fix position - allow dragging
+                }
+                
+                nodes.push(nodeData);
+            });
+            
+            // Add links with gradient colors
+            topology.links.forEach(link => {
+                edges.push({
+                    from: link.from,
+                    to: link.to,
+                    width: 3,
+                    color: {
+                        color: '#667eea',
+                        highlight: '#FFD700'
+                    }
+                });
+            });
+            
+            // Update data without triggering physics
+            network.setData({nodes: nodes, edges: edges});
+            network.setOptions({ physics: { enabled: false } });  // Disable physics after first layout
+        }
+        
+        // Update hosts table
+        function updateHosts(hosts) {
+            // We'll get all hosts from topology instead
+        }
+        
+        // Update stats from topology (includes infrastructure hosts)
+        function updateStats(topology) {
+            if (!topology || !topology.hosts) return;
+            
+            let totalHosts = topology.hosts.length;
+            let approved = 0;
+            let quarantine = 0;
+            let blocked = 0;
+            
+            // Update stats counts
+            topology.hosts.forEach(host => {
+                if (host.state === 'approved') approved++;
+                else if (host.state === 'blocked') blocked++;
+                else quarantine++;
+            });
+            
+            // Update stats boxes
+            document.getElementById('totalHosts').textContent = totalHosts;
+            document.getElementById('approvedHosts').textContent = approved;
+            document.getElementById('quarantineHosts').textContent = quarantine;
+            document.getElementById('blockedHosts').textContent = blocked;
+            
+            // Update hosts table with ALL hosts from topology
+            const tbody = document.getElementById('hostsTable');
+            tbody.innerHTML = '';
+            
+            if (topology.hosts.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;opacity:0.5">No hosts</td></tr>';
+                return;
+            }
+            
+            // Sort: infrastructure first, then by IP
+            const sortedHosts = [...topology.hosts].sort((a, b) => {
+                const aIsInfra = a.id.startsWith('infra:');
+                const bIsInfra = b.id.startsWith('infra:');
+                if (aIsInfra && !bIsInfra) return -1;
+                if (!aIsInfra && bIsInfra) return 1;
+                return a.label.localeCompare(b.label);
+            });
+            
+            sortedHosts.forEach(host => {
+                const stateClass = host.state === 'approved' ? 'status-approved' :
+                                  host.state === 'blocked' ? 'status-blocked' : 'status-quarantine';
+                
+                const stateBadge = host.state === 'approved' ? '✅ Approved' :
+                                 host.state === 'blocked' ? '🚫 Blocked' : '🔒 Quarantine';
+                
+                // Extract hostname from label (format: "hostname\nIP" or just "IP")
+                const labelParts = host.label.split('\n');
+                const hostname = labelParts.length > 1 ? labelParts[0] : 'unknown';
+                const ip = labelParts.length > 1 ? labelParts[1] : labelParts[0];
+                
+                // Get violations from host object
+                const violations = host.violations || 0;
+                
+                // Format MAC - show real MAC or indicate infrastructure
+                const macDisplay = host.id.startsWith('infra:') ? 
+                                  '<em>static</em>' : 
+                                  `<small>${host.id.substring(0, 17)}</small>`;
+                
+                const row = `
+                    <tr>
+                        <td><strong>${hostname}</strong></td>
+                        <td>${ip}</td>
+                        <td>${macDisplay}</td>
+                        <td class="${stateClass}">${stateBadge}</td>
+                        <td>${violations}</td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+        }
+        
+        // Update risk chart
+        function updateAI(aiMetrics) {
+            if (!aiMetrics || !riskChart) return;
+            
+            const labels = [];
+            const data = [];
+            
+            for (const [mac, info] of Object.entries(aiMetrics)) {
+                if (info.risk_score > 0) {  // Only show hosts with risk
+                    labels.push(info.ip || mac.substring(0, 17));
+                    data.push(Math.round(info.risk_score));
+                }
+            }
+            
+            // If no data, show placeholder
+            if (labels.length === 0) {
+                labels.push('No risk data');
+                data.push(0);
+            }
+            
+            riskChart.data.labels = labels;
+            riskChart.data.datasets[0].data = data;
+            riskChart.update('none');  // Update without animation
+        }
+        
+        // Update attack log
+        function updateAttacks(attacks) {
+            if (!attacks) return;
+            
+            const log = document.getElementById('attackLog');
+            log.innerHTML = '';
+            
+            attacks.slice().reverse().forEach(attack => {
+                const time = new Date(attack.timestamp * 1000).toLocaleTimeString();
+                const item = `
+                    <div class="attack-item">
+                        <strong>${attack.type}</strong> from ${attack.ip} (${attack.mac.substring(0, 17)})<br>
+                        <small>${time} - ${attack.details} - Violations: ${attack.violations}</small>
+                    </div>
+                `;
+                log.innerHTML += item;
+            });
+            
+            if (attacks.length === 0) {
+                log.innerHTML = '<p class="text-muted">No attacks detected yet</p>';
+            }
+        }
+        
+        // Initialize on load
+        window.onload = init;
+    </script>
+</body>
+</html>
